@@ -1,0 +1,24 @@
+{
+  "name": "openclaw-parcel-deck",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "OpenClaw plugin that exposes Parcel Deck shipment tools.",
+  "files": [
+    "README.md",
+    "helpers.ts",
+    "index.ts",
+    "openclaw.plugin.json",
+    "tsconfig.json"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.41"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

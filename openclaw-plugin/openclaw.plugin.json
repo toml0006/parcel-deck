@@ -1,0 +1,48 @@
+{
+  "id": "parcel-deck",
+  "name": "Parcel Deck",
+  "description": "Adds Parcel Deck shipment ingest and lookup tools to OpenClaw.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "description": "Base URL for the Parcel Deck app, for example http://localhost:3010"
+      },
+      "sharedSecret": {
+        "type": "string",
+        "description": "Shared secret used for Parcel Deck ingest authentication"
+      },
+      "defaultSource": {
+        "type": "string",
+        "enum": ["openclaw_email", "manual", "import"],
+        "description": "Default shipment source attached when the ingest tool does not specify one"
+      },
+      "timeoutMs": {
+        "type": "integer",
+        "minimum": 1000,
+        "description": "HTTP timeout for Parcel Deck API requests in milliseconds"
+      }
+    },
+    "required": ["baseUrl", "sharedSecret"]
+  },
+  "uiHints": {
+    "baseUrl": {
+      "label": "Parcel Deck Base URL",
+      "placeholder": "http://localhost:3010"
+    },
+    "sharedSecret": {
+      "label": "Parcel Deck Shared Secret",
+      "sensitive": true
+    },
+    "defaultSource": {
+      "label": "Default Shipment Source"
+    },
+    "timeoutMs": {
+      "label": "HTTP Timeout (ms)",
+      "placeholder": "15000"
+    }
+  }
+}

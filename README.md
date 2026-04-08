@@ -88,6 +88,54 @@ curl -X POST http://localhost:3000/api/ingest/shipments \
 
 The endpoint deduplicates repeated ingests using source checksum, source message id, and carrier + tracking number when available.
 
+## OpenClaw plugin
+
+This repo now includes a native OpenClaw plugin in [openclaw-plugin/README.md](/Users/jackson/dev/middleout/package-tracker/openclaw-plugin/README.md). It exposes Parcel Deck as optional OpenClaw tools so your agents can call the dashboard directly instead of manually constructing HTTP requests.
+
+Install it from this repo:
+
+```bash
+openclaw plugins install ./openclaw-plugin
+openclaw gateway restart
+```
+
+Then add plugin config to `~/.openclaw/openclaw.json`:
+
+```json5
+{
+  plugins: {
+    entries: {
+      "parcel-deck": {
+        enabled: true,
+        config: {
+          baseUrl: "http://localhost:3010",
+          sharedSecret: "replace-with-a-long-random-secret",
+          defaultSource: "openclaw_email",
+          timeoutMs: 15000
+        }
+      }
+    }
+  }
+}
+```
+
+Because the plugin tools are optional, allow them explicitly:
+
+```json5
+{
+  agents: {
+    list: [
+      {
+        id: "main",
+        tools: {
+          allow: ["parcel-deck"]
+        }
+      }
+    ]
+  }
+}
+```
+
 ## Read APIs
 
 - `GET /api/shipments`
