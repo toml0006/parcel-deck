@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ArrowLeft, ArrowUpRight, Mail, Package, Store, Waypoints } from "lucide-react";
 
+import { LiveShipmentRefresh } from "@/components/live-shipment-refresh";
 import { SectionHeading } from "@/components/section-heading";
 import { SetupPanel } from "@/components/setup-panel";
 import { StatusBadge } from "@/components/status-badge";
@@ -49,6 +50,9 @@ export default async function ShipmentDetailPage({ params }: ShipmentDetailPageP
             <ArrowLeft className="size-4" />
             Back to dashboard
           </Link>
+          <div className="mt-4">
+            <LiveShipmentRefresh />
+          </div>
         </div>
 
         <section className="rounded-[2.5rem] border border-white/60 bg-white/70 p-7 shadow-[0_36px_90px_-42px_rgba(15,23,42,0.55)] backdrop-blur md:p-10">

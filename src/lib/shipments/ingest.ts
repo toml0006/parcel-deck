@@ -330,8 +330,8 @@ export async function ingestShipment(rawPayload: unknown): Promise<IngestResult>
       trackingNumberNormalized,
     );
     const providerKind =
-      env.trackingProvider === "aggregator" && env.trackingProviderApiKey
-        ? ProviderKind.aggregator
+      env.trackingProvider === "easypost" && env.easyPostApiKey
+        ? ProviderKind.easypost
         : ProviderKind.carrier_link;
     const eventOccurredAt = payload.estimated_delivery ?? payload.ordered_at ?? new Date();
     const deliveredAt =

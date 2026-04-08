@@ -3,6 +3,7 @@ import { PackagePlus, ShieldCheck, Sparkles } from "lucide-react";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { EmptyState } from "@/components/empty-state";
 import { FilterBar } from "@/components/filter-bar";
+import { LiveShipmentRefresh } from "@/components/live-shipment-refresh";
 import { SectionHeading } from "@/components/section-heading";
 import { SetupPanel } from "@/components/setup-panel";
 import { ShipmentCard } from "@/components/shipment-card";
@@ -47,6 +48,9 @@ export default async function Home({ searchParams }: HomePageProps) {
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
                 Parcel Deck
               </p>
+              <div className="mt-4">
+                <LiveShipmentRefresh />
+              </div>
               <h1 className="mt-4 max-w-3xl font-display text-5xl leading-[1] text-slate-950 md:text-7xl">
                 A household shipment board with an OpenClaw intake lane.
               </h1>
@@ -76,12 +80,12 @@ export default async function Home({ searchParams }: HomePageProps) {
                     <PackagePlus className="size-4" />
                   </span>
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    Agent ingest
+                    OpenClaw discovery
                   </p>
                 </div>
                 <p className="mt-4 text-sm leading-7 text-slate-600">
-                  OpenClaw agents can post directly into the dashboard API as they parse new
-                  shipping emails.
+                  OpenClaw agents only discover shipments from your email and hand them to Parcel
+                  Deck.
                 </p>
               </div>
               <div className="rounded-[1.8rem] border border-white/70 bg-white/80 p-5">
@@ -90,12 +94,12 @@ export default async function Home({ searchParams }: HomePageProps) {
                     <ShieldCheck className="size-4" />
                   </span>
                   <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    Self-hosted
+                    App-owned tracking
                   </p>
                 </div>
                 <p className="mt-4 text-sm leading-7 text-slate-600">
-                  Dockerized Postgres, app, and worker with a clean path to optional tracking
-                  adapters later.
+                  EasyPost webhooks and app-side refresh keep tracking updates inside Parcel Deck
+                  instead of OpenClaw.
                 </p>
               </div>
             </div>

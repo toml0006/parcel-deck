@@ -26,7 +26,7 @@ enum ShipmentSource {
 
 enum ProviderKind {
   carrier_link
-  aggregator
+  easypost
 }
 
 enum ArtifactKind {
@@ -58,6 +58,7 @@ model Shipment {
   rawEmailExcerpt          String?
   metadata                 Json?
   providerKind             ProviderKind     @default(carrier_link)
+  providerTrackingId       String?
   active                   Boolean          @default(true)
   events                   ShipmentEvent[]
   artifacts                ShipmentArtifact[]
@@ -66,6 +67,7 @@ model Shipment {
   @@index([currentStatus, active])
   @@index([estimatedDelivery])
   @@index([merchant, orderNumber])
+  @@index([providerKind, providerTrackingId])
   @@unique([carrier, trackingNumberNormalized], map: "shipment_tracking_identity")
 }
 
