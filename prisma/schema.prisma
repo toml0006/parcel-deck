@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ShipmentStatus {
+  pending
+  label_created
+  in_transit
+  out_for_delivery
+  delivered
+  exception
+  returned
+  unknown
+}
+
+enum ShipmentSource {
+  openclaw_email
+  manual
+  import
+}
+
+enum ProviderKind {
+  carrier_link
+  aggregator
+}
+
+enum ArtifactKind {
+  tracking_link
+  source_email
+  merchant_order
+}
+
+model Shipment {
+  id                       String           @id @default(cuid())
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  merchant                 String?
+  carrier                  String?
+  trackingNumber           String?
+  trackingNumberNormalized String?
+  trackingUrl              String?
+  orderNumber              String?
+  itemSummary              String?
+  orderedAt                DateTime?
+  estimatedDelivery        DateTime?
+  deliveredAt              DateTime?
+  lastEventAt              DateTime?
+  lastSyncedAt             DateTime?
+  currentStatus            ShipmentStatus   @default(unknown)
+  source                   ShipmentSource
+  externalId               String?
+  sourceMessageId          String?
+  rawEmailExcerpt          String?
+  metadata                 Json?
+  providerKind             ProviderKind     @default(carrier_link)
+  active                   Boolean          @default(true)
+  events                   ShipmentEvent[]
+  artifacts                ShipmentArtifact[]
+  sourceRecords            SourceRecord[]
+
+  @@index([currentStatus, active])
+  @@index([estimatedDelivery])
+  @@index([merchant, orderNumber])
+  @@unique([carrier, trackingNumberNormalized], map: "shipment_tracking_identity")
+}
+
+model ShipmentEvent {
+  id          String         @id @default(cuid())
+  shipmentId  String
+  occurredAt  DateTime
+  status      ShipmentStatus
+  location    String?
+  description String
+  source      String?
+  dedupeKey   String?
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+  shipment    Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, occurredAt(sort: Desc)])
+  @@unique([shipmentId, dedupeKey], map: "shipment_event_dedupe")
+}
+
+model ShipmentArtifact {
+  id         String       @id @default(cuid())
+  shipmentId String
+  key        String
+  kind       ArtifactKind
+  label      String
+  url        String?
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+  shipment   Shipment     @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId, kind])
+  @@unique([shipmentId, key], map: "shipment_artifact_key")
+}
+
+model SourceRecord {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  shipmentId      String
+  source          ShipmentSource
+  externalId      String?
+  sourceMessageId String?
+  checksum        String
+  payload         Json
+  shipment        Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([externalId])
+  @@unique([source, checksum], map: "source_record_checksum")
+  @@unique([source, sourceMessageId], map: "source_record_message")
+}

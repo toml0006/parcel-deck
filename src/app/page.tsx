@@ -1,65 +1,159 @@
-import Image from "next/image";
+import { PackagePlus, ShieldCheck, Sparkles } from "lucide-react";
 
-export default function Home() {
+import { DashboardStats } from "@/components/dashboard-stats";
+import { EmptyState } from "@/components/empty-state";
+import { FilterBar } from "@/components/filter-bar";
+import { SectionHeading } from "@/components/section-heading";
+import { SetupPanel } from "@/components/setup-panel";
+import { ShipmentCard } from "@/components/shipment-card";
+import { getDashboardData } from "@/lib/shipments/queries";
+
+export const dynamic = "force-dynamic";
+
+type HomePageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getSingleValue(
+  value: string | string[] | undefined,
+): string | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
+
+export default async function Home({ searchParams }: HomePageProps) {
+  const params = (await searchParams) ?? {};
+  const q = getSingleValue(params.q);
+  const status = getSingleValue(params.status);
+  const data = await getDashboardData({ q, status });
+  const highlighted = data.shipments.filter((shipment) =>
+    ["out_for_delivery", "exception"].includes(shipment.currentStatus),
+  );
+  const active = data.shipments.filter(
+    (shipment) => shipment.active && !highlighted.some((entry) => entry.id === shipment.id),
+  );
+  const delivered = data.shipments.filter((shipment) => !shipment.active);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <main className="relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.22),_transparent_28%),radial-gradient(circle_at_80%_12%,_rgba(251,191,36,0.24),_transparent_22%),radial-gradient(circle_at_60%_90%,_rgba(16,185,129,0.18),_transparent_28%)]" />
+      <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-5 py-8 md:px-10 md:py-10">
+        <section className="overflow-hidden rounded-[2.5rem] border border-white/60 bg-white/68 p-7 shadow-[0_36px_90px_-42px_rgba(15,23,42,0.55)] backdrop-blur md:p-10">
+          <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
+                Parcel Deck
+              </p>
+              <h1 className="mt-4 max-w-3xl font-display text-5xl leading-[1] text-slate-950 md:text-7xl">
+                A household shipment board with an OpenClaw intake lane.
+              </h1>
+              <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 md:text-lg">
+                Track everything that is still moving toward your door, not just raw tracking
+                numbers. Each package carries merchant context, email provenance, timeline events,
+                and direct carrier links.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-1">
+              <div className="rounded-[1.8rem] border border-white/70 bg-slate-950 p-5 text-white">
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full bg-white/10 p-2">
+                    <Sparkles className="size-4" />
+                  </span>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">
+                    Visual board
+                  </p>
+                </div>
+                <p className="mt-4 text-sm leading-7 text-slate-200">
+                  Status-first cards, ETA visibility, and a timeline view for every shipment.
+                </p>
+              </div>
+              <div className="rounded-[1.8rem] border border-white/70 bg-white/80 p-5">
+                <div className="flex items-center gap-3 text-slate-900">
+                  <span className="rounded-full bg-cyan-100 p-2">
+                    <PackagePlus className="size-4" />
+                  </span>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                    Agent ingest
+                  </p>
+                </div>
+                <p className="mt-4 text-sm leading-7 text-slate-600">
+                  OpenClaw agents can post directly into the dashboard API as they parse new
+                  shipping emails.
+                </p>
+              </div>
+              <div className="rounded-[1.8rem] border border-white/70 bg-white/80 p-5">
+                <div className="flex items-center gap-3 text-slate-900">
+                  <span className="rounded-full bg-emerald-100 p-2">
+                    <ShieldCheck className="size-4" />
+                  </span>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                    Self-hosted
+                  </p>
+                </div>
+                <p className="mt-4 text-sm leading-7 text-slate-600">
+                  Dockerized Postgres, app, and worker with a clean path to optional tracking
+                  adapters later.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {data.error ? <SetupPanel error={data.error} /> : null}
+
+        <DashboardStats {...data.stats} />
+        <FilterBar q={q} status={status} />
+
+        {!data.error && data.shipments.length === 0 ? <EmptyState /> : null}
+
+        {highlighted.length ? (
+          <section className="space-y-5">
+            <SectionHeading
+              caption="Front of line"
+              description="The packages most likely to need a glance right now: today's arrivals and anything with a problem state."
+              title="Priority parcels"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            <div className="grid gap-5 xl:grid-cols-2">
+              {highlighted.map((shipment) => (
+                <ShipmentCard key={shipment.id} shipment={shipment} />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {active.length ? (
+          <section className="space-y-5">
+            <SectionHeading
+              caption="In motion"
+              description="Everything that is still moving toward the house, sorted by urgency and ETA."
+              title="Transit lane"
+            />
+            <div className="grid gap-5 xl:grid-cols-2">
+              {active.map((shipment) => (
+                <ShipmentCard key={shipment.id} shipment={shipment} />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {delivered.length ? (
+          <section className="space-y-5">
+            <SectionHeading
+              caption="Archive"
+              description="Recently completed deliveries stay visible here so the board retains short-term memory."
+              title="Recently landed"
+            />
+            <div className="grid gap-5 xl:grid-cols-2">
+              {delivered.map((shipment) => (
+                <ShipmentCard key={shipment.id} shipment={shipment} />
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </div>
+    </main>
   );
 }
