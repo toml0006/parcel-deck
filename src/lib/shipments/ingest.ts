@@ -370,8 +370,16 @@ export async function ingestShipment(rawPayload: unknown): Promise<IngestResult>
     (carrier === "amazon_orders" && effectiveOrderNumber
       ? buildTrackingUrl(carrier, effectiveOrderNumber)
       : buildTrackingUrl(carrier, trackingNumberNormalized ?? effectiveTrackingRaw));
-  const canonicalStatus =
-    amazon.forcedStatus ?? normalizeShipmentStatus(payload.current_status);
+  const explicitStatus = normalizeShipmentStatus(payload.current_status);
+  // Terminal states from OpenClaw (e.g. a "delivered" email) override the
+  // Amazon heuristic, which otherwise pins the status to awaiting_carrier.
+  const isTerminalExplicit =
+    explicitStatus === ShipmentStatusEnum.delivered ||
+    explicitStatus === ShipmentStatusEnum.returned ||
+    explicitStatus === ShipmentStatusEnum.exception;
+  const canonicalStatus = isTerminalExplicit
+    ? explicitStatus
+    : amazon.forcedStatus ?? explicitStatus;
 
   const result = await prisma.$transaction(async (tx) => {
     const duplicateRecord = await tx.sourceRecord.findUnique({
