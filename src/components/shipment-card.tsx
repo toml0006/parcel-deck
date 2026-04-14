@@ -8,7 +8,7 @@ import type { DashboardShipment } from "@/lib/shipments/types";
 
 import { StatusBadge } from "./status-badge";
 
-const statusSurface = {
+const statusSurface: Record<string, string> = {
   delivered: "from-emerald-100 via-white/85 to-white/50",
   exception: "from-rose-100 via-white/85 to-white/50",
   in_transit: "from-cyan-100 via-white/85 to-white/50",
@@ -16,8 +16,9 @@ const statusSurface = {
   out_for_delivery: "from-amber-100 via-white/85 to-white/50",
   pending: "from-slate-100 via-white/85 to-white/50",
   returned: "from-fuchsia-100 via-white/85 to-white/50",
+  awaiting_carrier: "from-violet-100 via-white/85 to-white/50",
   unknown: "from-stone-100 via-white/85 to-white/50",
-} as const;
+};
 
 type ShipmentCardProps = {
   shipment: DashboardShipment;

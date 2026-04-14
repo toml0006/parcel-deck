@@ -16,11 +16,75 @@ import { prisma } from "@/lib/prisma";
 import {
   buildTrackingUrl,
   getCarrierLabel,
+  isAmazonOrderId,
   normalizeCarrierHint,
   normalizeTrackingNumber,
 } from "./carriers";
 import { bindShipmentTracking } from "./provider";
 import { isActiveShipmentStatus, normalizeShipmentStatus } from "./status";
+import { ShipmentStatus as ShipmentStatusEnum } from "@prisma/client";
+
+function resolveDefaultProviderKind(): ProviderKind {
+  if (env.trackingProvider === "easypost" && env.easyPostApiKey) {
+    return ProviderKind.easypost;
+  }
+  if (env.trackingProvider === "carrier_link") {
+    return ProviderKind.carrier_link;
+  }
+  return ProviderKind.scraper;
+}
+
+/**
+ * Detects Amazon order IDs in the tracking_number field and re-slots them
+ * to orderNumber with an awaiting_carrier status. Amazon order IDs like
+ * 114-1234567-1234567 are not carrier tracking numbers and cannot be polled
+ * until a shipping email arrives with a real tracking#.
+ */
+function applyAmazonOrderHeuristics(
+  payload: IngestShipmentInput,
+  carrier: string | null,
+): {
+  carrier: string | null;
+  trackingNumber?: string;
+  orderNumber?: string;
+  forcedStatus?: ShipmentStatusEnum;
+} {
+  const candidate = payload.tracking_number ?? payload.order_number ?? "";
+  const isAmazonish =
+    (carrier?.startsWith("amazon") ?? false) ||
+    /amazon/i.test(payload.merchant ?? "") ||
+    isAmazonOrderId(candidate);
+
+  if (!isAmazonish) {
+    return { carrier };
+  }
+
+  if (isAmazonOrderId(payload.tracking_number ?? "")) {
+    return {
+      carrier: "amazon_orders",
+      trackingNumber: undefined,
+      orderNumber: payload.order_number ?? payload.tracking_number,
+      forcedStatus: ShipmentStatusEnum.awaiting_carrier,
+    };
+  }
+
+  if (!payload.tracking_number && isAmazonOrderId(payload.order_number ?? "")) {
+    return {
+      carrier: "amazon_orders",
+      forcedStatus: ShipmentStatusEnum.awaiting_carrier,
+    };
+  }
+
+  if (!payload.tracking_number && payload.order_number) {
+    // Amazon merchant with an order number but no tracking yet
+    return {
+      carrier: carrier ?? "amazon_orders",
+      forcedStatus: ShipmentStatusEnum.awaiting_carrier,
+    };
+  }
+
+  return { carrier };
+}
 
 const ingestShipmentSchema = z
   .object({
@@ -290,12 +354,24 @@ async function findExistingShipment(
 export async function ingestShipment(rawPayload: unknown): Promise<IngestResult> {
   const payload = parseIngestShipmentInput(rawPayload);
   const checksum = getPayloadChecksum(payload);
-  const carrier = normalizeCarrierHint(payload.carrier_hint);
-  const trackingNumberNormalized = normalizeTrackingNumber(payload.tracking_number);
+  const initialCarrier = normalizeCarrierHint(payload.carrier_hint);
+  const amazon = applyAmazonOrderHeuristics(payload, initialCarrier);
+  const carrier = amazon.carrier;
+  const effectiveTrackingRaw =
+    amazon.trackingNumber === undefined
+      ? isAmazonOrderId(payload.tracking_number ?? "")
+        ? null
+        : payload.tracking_number ?? null
+      : amazon.trackingNumber;
+  const effectiveOrderNumber = amazon.orderNumber ?? payload.order_number ?? null;
+  const trackingNumberNormalized = normalizeTrackingNumber(effectiveTrackingRaw);
   const trackingUrl =
     payload.tracking_url ??
-    buildTrackingUrl(carrier, trackingNumberNormalized ?? payload.tracking_number);
-  const canonicalStatus = normalizeShipmentStatus(payload.current_status);
+    (carrier === "amazon_orders" && effectiveOrderNumber
+      ? buildTrackingUrl(carrier, effectiveOrderNumber)
+      : buildTrackingUrl(carrier, trackingNumberNormalized ?? effectiveTrackingRaw));
+  const canonicalStatus =
+    amazon.forcedStatus ?? normalizeShipmentStatus(payload.current_status);
 
   const result = await prisma.$transaction(async (tx) => {
     const duplicateRecord = await tx.sourceRecord.findUnique({
@@ -329,10 +405,7 @@ export async function ingestShipment(rawPayload: unknown): Promise<IngestResult>
       carrier,
       trackingNumberNormalized,
     );
-    const providerKind =
-      env.trackingProvider === "easypost" && env.easyPostApiKey
-        ? ProviderKind.easypost
-        : ProviderKind.carrier_link;
+    const providerKind = resolveDefaultProviderKind();
     const eventOccurredAt = payload.estimated_delivery ?? payload.ordered_at ?? new Date();
     const deliveredAt =
       canonicalStatus === "delivered"
@@ -355,13 +428,13 @@ export async function ingestShipment(rawPayload: unknown): Promise<IngestResult>
             lastEventAt: eventOccurredAt,
             merchant: payload.merchant ?? existingShipment.merchant,
             metadata: mergeMetadata(existingShipment.metadata, payload.metadata),
-            orderNumber: payload.order_number ?? existingShipment.orderNumber,
+            orderNumber: effectiveOrderNumber ?? existingShipment.orderNumber,
             orderedAt: payload.ordered_at ?? existingShipment.orderedAt,
             providerKind,
             rawEmailExcerpt: payload.raw_email_excerpt ?? existingShipment.rawEmailExcerpt,
             source: payload.source,
             sourceMessageId: payload.source_message_id ?? existingShipment.sourceMessageId,
-            trackingNumber: payload.tracking_number ?? existingShipment.trackingNumber,
+            trackingNumber: effectiveTrackingRaw ?? existingShipment.trackingNumber,
             trackingNumberNormalized:
               trackingNumberNormalized ?? existingShipment.trackingNumberNormalized,
             trackingUrl: trackingUrl ?? existingShipment.trackingUrl,
@@ -379,13 +452,13 @@ export async function ingestShipment(rawPayload: unknown): Promise<IngestResult>
             lastEventAt: eventOccurredAt,
             merchant: payload.merchant,
             metadata: mergeMetadata(null, payload.metadata),
-            orderNumber: payload.order_number,
+            orderNumber: effectiveOrderNumber,
             orderedAt: payload.ordered_at,
             providerKind,
             rawEmailExcerpt: payload.raw_email_excerpt,
             source: payload.source,
             sourceMessageId: payload.source_message_id,
-            trackingNumber: payload.tracking_number,
+            trackingNumber: effectiveTrackingRaw,
             trackingNumberNormalized,
             trackingUrl,
           },

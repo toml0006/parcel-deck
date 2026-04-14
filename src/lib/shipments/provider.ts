@@ -21,6 +21,7 @@ import {
   retrieveEasyPostTracker,
   type ShipmentTrackingEvent,
 } from "./easypost";
+import { scrapeCarrier } from "./scrapers";
 import { isActiveShipmentStatus } from "./status";
 
 type RefreshResult = {
@@ -179,11 +180,94 @@ const easyPostProvider: TrackingProvider = {
   },
 };
 
+const scraperProvider: TrackingProvider = {
+  async createOrBindTracking(shipment) {
+    return {
+      trackingUrl:
+        shipment?.trackingUrl ??
+        buildTrackingUrl(
+          shipment?.carrier,
+          shipment?.trackingNumberNormalized ?? shipment?.trackingNumber,
+        ),
+      metadata: { provider: "scraper" },
+    };
+  },
+  async refreshTracking(shipment) {
+    if (!shipment) return {};
+    const trackingNumber =
+      shipment.trackingNumberNormalized ?? shipment.trackingNumber ?? null;
+    const result = await scrapeCarrier(shipment.carrier, trackingNumber);
+
+    if (!result.ok) {
+      return {
+        metadata: {
+          provider: "scraper",
+          lastScrapeError: result.error,
+          lastScrapeAt: new Date().toISOString(),
+          lastScrapeTransient: result.transient,
+        },
+        // Preserve existing trackingUrl if any
+        trackingUrl:
+          shipment.trackingUrl ??
+          buildTrackingUrl(
+            shipment.carrier,
+            shipment.trackingNumberNormalized ?? shipment.trackingNumber,
+          ),
+      };
+    }
+
+    const events: ShipmentTrackingEvent[] = result.events.map((e) => ({
+      dedupeKey: e.dedupeKey,
+      description: e.description,
+      location: e.location ?? null,
+      occurredAt: e.occurredAt,
+      source: `scraper:${result.carrier}`,
+      status: e.status,
+      metadata: undefined,
+    }));
+
+    // Preserve awaiting_carrier status from ingest for amazon_orders.
+    const currentStatus =
+      shipment.carrier === "amazon_orders"
+        ? shipment.currentStatus
+        : result.status;
+
+    return {
+      carrier: shipment.carrier,
+      currentStatus,
+      deliveredAt: result.deliveredAt ?? undefined,
+      estimatedDelivery: result.estimatedDelivery ?? undefined,
+      events,
+      metadata: {
+        provider: "scraper",
+        lastScrapeAt: new Date().toISOString(),
+        lastScrapeError: null,
+      },
+      trackingUrl:
+        shipment.trackingUrl ??
+        buildTrackingUrl(
+          shipment.carrier,
+          shipment.trackingNumberNormalized ?? shipment.trackingNumber,
+        ),
+    };
+  },
+};
+
 function getTrackingProvider(kind: ProviderKind): TrackingProvider {
   if (kind === ProviderKind.easypost) {
     return easyPostProvider;
   }
-
+  if (kind === ProviderKind.scraper) {
+    return scraperProvider;
+  }
+  // For legacy carrier_link (and unknown kinds) fall back based on env.
+  if (env.trackingProvider === "easypost" && env.easyPostApiKey) {
+    return easyPostProvider;
+  }
+  // Default to scraper unless explicitly configured to carrier_link.
+  if (env.trackingProvider !== "carrier_link") {
+    return scraperProvider;
+  }
   return carrierLinkProvider;
 }
 
@@ -348,30 +432,79 @@ export async function refreshShipment(shipmentId: string) {
   return result;
 }
 
-export async function runRefreshCycle(limit = 25) {
-  const shipments = await prisma.shipment.findMany({
+const ACTIVE_STATUSES: ShipmentStatus[] = [
+  ShipmentStatus.exception,
+  ShipmentStatus.out_for_delivery,
+  ShipmentStatus.in_transit,
+  ShipmentStatus.label_created,
+  ShipmentStatus.pending,
+  ShipmentStatus.awaiting_carrier,
+  ShipmentStatus.unknown,
+];
+
+const PRIORITY_STATUSES = new Set<ShipmentStatus>([
+  ShipmentStatus.exception,
+  ShipmentStatus.out_for_delivery,
+]);
+
+async function runInParallel<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let i = 0;
+  async function worker() {
+    while (i < items.length) {
+      const idx = i++;
+      results[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+export async function runRefreshCycle(limit = 50) {
+  const now = Date.now();
+  const thirtyMinAgo = new Date(now - 30 * 60 * 1000);
+
+  const candidates = await prisma.shipment.findMany({
     where: {
       active: true,
+      currentStatus: { in: ACTIVE_STATUSES },
     },
-    orderBy: [
-      {
-        lastSyncedAt: "asc",
-      },
-      {
-        updatedAt: "asc",
-      },
-    ],
-    take: limit,
+    orderBy: [{ lastSyncedAt: "asc" }, { updatedAt: "asc" }],
+    take: limit * 2,
   });
 
-  let refreshed = 0;
+  const eligible = candidates.filter((s) => {
+    if (PRIORITY_STATUSES.has(s.currentStatus)) return true;
+    // Active tier: only if stale (>30 min) or never synced.
+    return !s.lastSyncedAt || s.lastSyncedAt < thirtyMinAgo;
+  });
 
-  for (const shipment of shipments) {
-    await refreshShipment(shipment.id);
-    refreshed += 1;
-  }
+  // Sort: priority tier first, then by lastSyncedAt asc.
+  eligible.sort((a, b) => {
+    const aPrio = PRIORITY_STATUSES.has(a.currentStatus) ? 0 : 1;
+    const bPrio = PRIORITY_STATUSES.has(b.currentStatus) ? 0 : 1;
+    if (aPrio !== bPrio) return aPrio - bPrio;
+    const aSync = a.lastSyncedAt?.getTime() ?? 0;
+    const bSync = b.lastSyncedAt?.getTime() ?? 0;
+    return aSync - bSync;
+  });
+
+  const batch = eligible.slice(0, limit);
+
+  await runInParallel(batch, 4, async (shipment) => {
+    try {
+      await refreshShipment(shipment.id);
+    } catch (error) {
+      console.error(`refresh failed for ${shipment.id}:`, (error as Error).message);
+    }
+  });
 
   return {
-    refreshed,
+    refreshed: batch.length,
+    considered: candidates.length,
   };
 }

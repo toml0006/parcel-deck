@@ -1,13 +1,12 @@
-import { PackagePlus, ShieldCheck, Sparkles } from "lucide-react";
-
 import { DashboardStats } from "@/components/dashboard-stats";
 import { EmptyState } from "@/components/empty-state";
 import { FilterBar } from "@/components/filter-bar";
 import { LiveShipmentRefresh } from "@/components/live-shipment-refresh";
-import { SectionHeading } from "@/components/section-heading";
+import { PriorityCard } from "@/components/priority-card";
 import { SetupPanel } from "@/components/setup-panel";
-import { ShipmentCard } from "@/components/shipment-card";
+import { ShipmentTable } from "@/components/shipment-table";
 import { getDashboardData } from "@/lib/shipments/queries";
+import { isToday } from "date-fns";
 
 export const dynamic = "force-dynamic";
 
@@ -15,13 +14,10 @@ type HomePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function getSingleValue(
-  value: string | string[] | undefined,
-): string | null {
+function getSingleValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {
     return value[0] ?? null;
   }
-
   return value ?? null;
 }
 
@@ -30,133 +26,88 @@ export default async function Home({ searchParams }: HomePageProps) {
   const q = getSingleValue(params.q);
   const status = getSingleValue(params.status);
   const data = await getDashboardData({ q, status });
-  const highlighted = data.shipments.filter((shipment) =>
-    ["out_for_delivery", "exception"].includes(shipment.currentStatus),
-  );
-  const active = data.shipments.filter(
-    (shipment) => shipment.active && !highlighted.some((entry) => entry.id === shipment.id),
-  );
-  const delivered = data.shipments.filter((shipment) => !shipment.active);
+
+  const priority = data.shipments.filter((s) => {
+    if (s.currentStatus === "exception" || s.currentStatus === "out_for_delivery") return true;
+    if (s.estimatedDelivery && isToday(s.estimatedDelivery)) return true;
+    return false;
+  });
+
+  const tableShipments = data.shipments
+    .filter((s) => !priority.some((p) => p.id === s.id))
+    .map((s) => {
+      const trackingArtifact = s.artifacts.find((a) => a.key === "tracking");
+      const emailArtifact = s.artifacts.find((a) => a.key === "source-email");
+      const latest = s.events[0];
+      return {
+        id: s.id,
+        currentStatus: s.currentStatus,
+        merchant: s.merchant,
+        itemSummary: s.itemSummary,
+        carrier: s.carrier,
+        trackingNumber: s.trackingNumber,
+        estimatedDelivery: s.estimatedDelivery?.toISOString() ?? null,
+        lastEventAt: latest?.occurredAt.toISOString() ?? s.lastEventAt?.toISOString() ?? null,
+        lastEventDescription: latest?.description ?? null,
+        createdAt: s.createdAt.toISOString(),
+        trackingUrl: trackingArtifact?.url ?? s.trackingUrl ?? null,
+        sourceEmailUrl: emailArtifact?.url ?? null,
+      };
+    });
 
   return (
-    <main className="relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.22),_transparent_28%),radial-gradient(circle_at_80%_12%,_rgba(251,191,36,0.24),_transparent_22%),radial-gradient(circle_at_60%_90%,_rgba(16,185,129,0.18),_transparent_28%)]" />
-      <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-5 py-8 md:px-10 md:py-10">
-        <section className="overflow-hidden rounded-[2.5rem] border border-white/60 bg-white/68 p-7 shadow-[0_36px_90px_-42px_rgba(15,23,42,0.55)] backdrop-blur md:p-10">
-          <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-                Parcel Deck
-              </p>
-              <div className="mt-4">
-                <LiveShipmentRefresh />
-              </div>
-              <h1 className="mt-4 max-w-3xl font-display text-5xl leading-[1] text-slate-950 md:text-7xl">
-                A household shipment board with an OpenClaw intake lane.
-              </h1>
-              <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 md:text-lg">
-                Track everything that is still moving toward your door, not just raw tracking
-                numbers. Each package carries merchant context, email provenance, timeline events,
-                and direct carrier links.
-              </p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-1">
-              <div className="rounded-[1.8rem] border border-white/70 bg-slate-950 p-5 text-white">
-                <div className="flex items-center gap-3">
-                  <span className="rounded-full bg-white/10 p-2">
-                    <Sparkles className="size-4" />
-                  </span>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">
-                    Visual board
-                  </p>
-                </div>
-                <p className="mt-4 text-sm leading-7 text-slate-200">
-                  Status-first cards, ETA visibility, and a timeline view for every shipment.
-                </p>
-              </div>
-              <div className="rounded-[1.8rem] border border-white/70 bg-white/80 p-5">
-                <div className="flex items-center gap-3 text-slate-900">
-                  <span className="rounded-full bg-cyan-100 p-2">
-                    <PackagePlus className="size-4" />
-                  </span>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    OpenClaw discovery
-                  </p>
-                </div>
-                <p className="mt-4 text-sm leading-7 text-slate-600">
-                  OpenClaw agents only discover shipments from your email and hand them to Parcel
-                  Deck.
-                </p>
-              </div>
-              <div className="rounded-[1.8rem] border border-white/70 bg-white/80 p-5">
-                <div className="flex items-center gap-3 text-slate-900">
-                  <span className="rounded-full bg-emerald-100 p-2">
-                    <ShieldCheck className="size-4" />
-                  </span>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    App-owned tracking
-                  </p>
-                </div>
-                <p className="mt-4 text-sm leading-7 text-slate-600">
-                  EasyPost webhooks and app-side refresh keep tracking updates inside Parcel Deck
-                  instead of OpenClaw.
-                </p>
-              </div>
-            </div>
+    <main className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="font-display text-3xl text-slate-950">Parcel Deck</h1>
+            <p className="text-sm text-slate-500">
+              All inbound packages at a glance.
+            </p>
           </div>
-        </section>
+          <LiveShipmentRefresh />
+        </header>
 
         {data.error ? <SetupPanel error={data.error} /> : null}
 
-        <DashboardStats {...data.stats} />
-        <FilterBar q={q} status={status} />
+        <div className="space-y-5">
+          <DashboardStats {...data.stats} />
+          <FilterBar q={q} status={status} />
 
-        {!data.error && data.shipments.length === 0 ? <EmptyState /> : null}
+          {!data.error && data.shipments.length === 0 ? <EmptyState /> : null}
 
-        {highlighted.length ? (
-          <section className="space-y-5">
-            <SectionHeading
-              caption="Front of line"
-              description="The packages most likely to need a glance right now: today's arrivals and anything with a problem state."
-              title="Priority parcels"
-            />
-            <div className="grid gap-5 xl:grid-cols-2">
-              {highlighted.map((shipment) => (
-                <ShipmentCard key={shipment.id} shipment={shipment} />
-              ))}
-            </div>
-          </section>
-        ) : null}
+          {priority.length ? (
+            <section>
+              <div className="mb-2 flex items-baseline justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700">
+                  Priority
+                </h2>
+                <span className="text-xs text-slate-400">
+                  {priority.length} {priority.length === 1 ? "package" : "packages"}
+                </span>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-2">
+                {priority.map((shipment) => (
+                  <PriorityCard key={shipment.id} shipment={shipment} />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
-        {active.length ? (
-          <section className="space-y-5">
-            <SectionHeading
-              caption="In motion"
-              description="Everything that is still moving toward the house, sorted by urgency and ETA."
-              title="Transit lane"
-            />
-            <div className="grid gap-5 xl:grid-cols-2">
-              {active.map((shipment) => (
-                <ShipmentCard key={shipment.id} shipment={shipment} />
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {delivered.length ? (
-          <section className="space-y-5">
-            <SectionHeading
-              caption="Archive"
-              description="Recently completed deliveries stay visible here so the board retains short-term memory."
-              title="Recently landed"
-            />
-            <div className="grid gap-5 xl:grid-cols-2">
-              {delivered.map((shipment) => (
-                <ShipmentCard key={shipment.id} shipment={shipment} />
-              ))}
-            </div>
-          </section>
-        ) : null}
+          {tableShipments.length || data.shipments.length > priority.length ? (
+            <section>
+              <div className="mb-2 flex items-baseline justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-700">
+                  All packages
+                </h2>
+                <span className="text-xs text-slate-400">
+                  {tableShipments.length} {tableShipments.length === 1 ? "package" : "packages"}
+                </span>
+              </div>
+              <ShipmentTable shipments={tableShipments} />
+            </section>
+          ) : null}
+        </div>
       </div>
     </main>
   );

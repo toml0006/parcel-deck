@@ -7,6 +7,7 @@ export const shipmentStatusOptions = [
   ShipmentStatus.delivered,
   ShipmentStatus.label_created,
   ShipmentStatus.pending,
+  ShipmentStatus.awaiting_carrier,
   ShipmentStatus.returned,
   ShipmentStatus.unknown,
 ] as const;
@@ -61,15 +62,23 @@ export const shipmentStatusMeta: Record<ShipmentStatus, StatusMeta> = {
     tone: "ring-fuchsia-300/90 bg-fuchsia-100/80 text-fuchsia-950",
     rank: 7,
   },
+  [ShipmentStatus.awaiting_carrier]: {
+    label: "Awaiting carrier",
+    eyebrow: "No tracking yet",
+    tone: "ring-violet-300/90 bg-violet-100/80 text-violet-950",
+    rank: 5,
+  },
   [ShipmentStatus.unknown]: {
     label: "Unknown",
     eyebrow: "Unclear",
     tone: "ring-stone-300/90 bg-stone-100/80 text-stone-900",
-    rank: 8,
+    rank: 9,
   },
 };
 
 const statusAliasMap: Record<string, ShipmentStatus> = {
+  awaitingcarrier: ShipmentStatus.awaiting_carrier,
+  awaiting_carrier: ShipmentStatus.awaiting_carrier,
   created: ShipmentStatus.label_created,
   delivered: ShipmentStatus.delivered,
   delivery: ShipmentStatus.delivered,

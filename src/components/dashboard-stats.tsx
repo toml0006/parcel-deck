@@ -1,4 +1,4 @@
-import { ArrowRight, PackageCheck, PackageSearch, Siren, Truck } from "lucide-react";
+import { PackageCheck, PackageSearch, Siren, Truck } from "lucide-react";
 
 type DashboardStatsProps = {
   active: number;
@@ -8,61 +8,32 @@ type DashboardStatsProps = {
 };
 
 const statCards = [
-  {
-    bodyClassName: "from-cyan-300/30 via-white/70 to-white/30",
-    icon: Truck,
-    key: "outToday",
-    label: "Arriving today",
-  },
-  {
-    bodyClassName: "from-amber-300/30 via-white/70 to-white/30",
-    icon: PackageSearch,
-    key: "active",
-    label: "Still moving",
-  },
-  {
-    bodyClassName: "from-rose-300/30 via-white/70 to-white/30",
-    icon: Siren,
-    key: "attention",
-    label: "Needs attention",
-  },
-  {
-    bodyClassName: "from-emerald-300/30 via-white/70 to-white/30",
-    icon: PackageCheck,
-    key: "deliveredRecently",
-    label: "Delivered this week",
-  },
+  { icon: Truck, key: "outToday", label: "Out for delivery", accent: "text-amber-600" },
+  { icon: PackageSearch, key: "active", label: "In transit", accent: "text-cyan-600" },
+  { icon: Siren, key: "attention", label: "Needs attention", accent: "text-rose-600" },
+  { icon: PackageCheck, key: "deliveredRecently", label: "Delivered this week", accent: "text-emerald-600" },
 ] as const;
 
 export function DashboardStats(props: DashboardStatsProps) {
   return (
-    <section className="grid gap-4 md:grid-cols-4">
+    <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
       {statCards.map((card) => {
         const Icon = card.icon;
-
         return (
-          <article
+          <div
             key={card.key}
-            className={`rounded-[2rem] border border-white/60 bg-linear-to-br ${card.bodyClassName} p-5 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.45)] backdrop-blur`}
+            className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
           >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                  {card.label}
-                </p>
-                <p className="mt-3 font-display text-4xl text-slate-950">
-                  {props[card.key]}
-                </p>
-              </div>
-              <span className="rounded-full border border-slate-200/70 bg-white/80 p-3 text-slate-900 shadow-sm">
-                <Icon className="size-5" />
-              </span>
+            <Icon className={`size-5 ${card.accent}`} />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                {card.label}
+              </p>
+              <p className="text-2xl font-semibold text-slate-950 leading-none mt-0.5">
+                {props[card.key]}
+              </p>
             </div>
-            <div className="mt-5 flex items-center gap-2 text-sm text-slate-600">
-              <ArrowRight className="size-4" />
-              <span>Live from OpenClaw ingest</span>
-            </div>
-          </article>
+          </div>
         );
       })}
     </section>

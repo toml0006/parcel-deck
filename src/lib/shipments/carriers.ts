@@ -1,5 +1,6 @@
 const carrierLabelMap: Record<string, string> = {
   amazon_logistics: "Amazon Logistics",
+  amazon_orders: "Amazon",
   dhl: "DHL",
   fedex: "FedEx",
   lasership: "LaserShip",
@@ -7,6 +8,13 @@ const carrierLabelMap: Record<string, string> = {
   ups: "UPS",
   usps: "USPS",
 };
+
+const AMAZON_ORDER_ID_RE = /^\d{3}-\d{7}-\d{7}$/;
+
+export function isAmazonOrderId(value?: string | null) {
+  if (!value) return false;
+  return AMAZON_ORDER_ID_RE.test(value.trim());
+}
 
 export function normalizeTrackingNumber(value?: string | null) {
   if (!value) {
@@ -99,6 +107,8 @@ export function buildTrackingUrl(carrier?: string | null, trackingNumber?: strin
       return `https://www.lasership.com/track/${encoded}/detail`;
     case "amazon_logistics":
       return `https://track.amazon.com/tracking/${encoded}`;
+    case "amazon_orders":
+      return `https://www.amazon.com/gp/your-account/order-details?orderID=${encoded}`;
     default:
       return null;
   }

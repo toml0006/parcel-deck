@@ -7,5 +7,10 @@ export const env = {
   ingestSharedSecret: process.env.INGEST_SHARED_SECRET ?? "",
   liveRefreshIntervalMs: Number(process.env.LIVE_REFRESH_INTERVAL_MS ?? 3000),
   workerIntervalMs: Number(process.env.WORKER_INTERVAL_MS ?? defaultWorkerIntervalMs),
-  trackingProvider: process.env.TRACKING_PROVIDER === "easypost" ? "easypost" : "carrier_link",
+  trackingProvider:
+    process.env.TRACKING_PROVIDER === "easypost"
+      ? "easypost"
+      : process.env.TRACKING_PROVIDER === "carrier_link"
+        ? "carrier_link"
+        : "scraper",
 };

@@ -15,6 +15,7 @@ enum ShipmentStatus {
   delivered
   exception
   returned
+  awaiting_carrier
   unknown
 }
 
@@ -27,6 +28,8 @@ enum ShipmentSource {
 enum ProviderKind {
   carrier_link
   easypost
+  scraper
+  aggregator
 }
 
 enum ArtifactKind {
