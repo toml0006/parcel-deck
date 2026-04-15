@@ -24,6 +24,22 @@ function matchBetween(html: string, startRe: RegExp, endRe: RegExp): string | nu
   return end ? tail.slice(0, end.index) : tail;
 }
 
+function detectStatusFromInlineJson(html: string): ShipmentStatus | null {
+  const eventTypeMatch = /"eventType"\s*:\s*"([A-Z_ ]+)"/.exec(html);
+  if (eventTypeMatch) {
+    const s = normalizeShipmentStatus(eventTypeMatch[1].replace(/_/g, " "));
+    if (s !== ShipmentStatus.unknown) return s;
+  }
+  const summaryMatch =
+    /"summaryText"\s*:\s*"([^"]+)"/.exec(html) ??
+    /"statusCategory"\s*:\s*"([^"]+)"/.exec(html);
+  if (summaryMatch) {
+    const s = normalizeShipmentStatus(summaryMatch[1]);
+    if (s !== ShipmentStatus.unknown) return s;
+  }
+  return null;
+}
+
 export const uspsScraper: CarrierScraper = async ({ trackingNumber }) => {
   try {
     const res = await fetch(PAGE(trackingNumber), {
@@ -37,11 +53,13 @@ export const uspsScraper: CarrierScraper = async ({ trackingNumber }) => {
 
     const banner = matchBetween(
       html,
-      /<h2[^>]*class="[^"]*(?:tracking-text|banner-title)[^"]*"[^>]*>/i,
+      /<h2[^>]*class="[^"]*(?:tracking-text|banner-title|tracking-status|delivery-status)[^"]*"[^>]*>/i,
       /<\/h2>/i,
     );
     const headline = banner ? stripTags(banner) : "";
-    const status = normalizeShipmentStatus(headline);
+    const bannerStatus = headline
+      ? normalizeShipmentStatus(headline)
+      : ShipmentStatus.unknown;
 
     const events: ScrapedEvent[] = [];
     const rowRe = /<tr[^>]*class="[^"]*tb-[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
@@ -65,6 +83,20 @@ export const uspsScraper: CarrierScraper = async ({ trackingNumber }) => {
     }
 
     events.sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+
+    const jsonStatus = detectStatusFromInlineJson(html);
+
+    let status: ShipmentStatus;
+    if (bannerStatus !== ShipmentStatus.unknown) {
+      status = bannerStatus;
+    } else if (jsonStatus) {
+      status = jsonStatus;
+    } else if (events[0] && events[0].status !== ShipmentStatus.unknown) {
+      status = events[0].status;
+    } else {
+      // Nothing classifiable — don't overwrite the previously-good status.
+      return failure("USPS status could not be determined", true);
+    }
 
     const deliveredAt =
       status === ShipmentStatus.delivered

@@ -1,12 +1,16 @@
 const carrierLabelMap: Record<string, string> = {
   amazon_logistics: "Amazon Logistics",
   amazon_orders: "Amazon",
+  canada_post: "Canada Post",
   dhl: "DHL",
   fedex: "FedEx",
   lasership: "LaserShip",
   ontrac: "OnTrac",
+  sweetwater: "Sweetwater",
+  ubiquiti: "Ubiquiti",
   ups: "UPS",
   usps: "USPS",
+  yunexpress: "YunExpress",
 };
 
 const AMAZON_ORDER_ID_RE = /^\d{3}-\d{7}-\d{7}$/;
@@ -61,7 +65,61 @@ export function normalizeCarrierHint(value?: string | null) {
     return "dhl";
   }
 
+  if (
+    normalized.includes("yunexpress") ||
+    normalized.includes("yuntrack") ||
+    normalized.includes("yun express") ||
+    normalized.includes("yun track")
+  ) {
+    return "yunexpress";
+  }
+
+  if (normalized.includes("canada post") || normalized.includes("canadapost")) {
+    return "canada_post";
+  }
+
+  if (normalized.includes("sweetwater")) {
+    return "sweetwater";
+  }
+
+  if (normalized.includes("ubiquiti") || normalized.includes("ui.com")) {
+    return "ubiquiti";
+  }
+
   return normalized.replace(/[^a-z0-9]+/g, "_");
+}
+
+/**
+ * Detect a carrier from the shape of a tracking number when no hint is given.
+ * Returns null when no pattern matches — callers should fall back to merchant
+ * heuristics or leave carrier unset.
+ */
+export function detectCarrierFromTrackingNumber(
+  value?: string | null,
+): string | null {
+  const normalized = normalizeTrackingNumber(value);
+  if (!normalized) return null;
+
+  // Canada Post: LA/LB/RA etc. + 9 digits + CA.
+  if (/^[A-Z]{2}\d{9}CA$/.test(normalized)) return "canada_post";
+
+  // YunExpress: YT + digits.
+  if (/^YT\d{10,}$/.test(normalized)) return "yunexpress";
+
+  // USPS: 20 or 22 digit IMpb starting with 92/93/94/95, or 13-char
+  // international / priority-mail label (2 letters + 9 digits + US).
+  if (/^(92|93|94|95)\d{18}$/.test(normalized)) return "usps";
+  if (/^(92|93|94|95)\d{20}$/.test(normalized)) return "usps";
+  if (/^420\d{5}(92|93|94|95)\d{18,22}$/.test(normalized)) return "usps";
+  if (/^[A-Z]{2}\d{9}US$/.test(normalized)) return "usps";
+
+  // UPS: 1Z + 16 alphanum.
+  if (/^1Z[A-Z0-9]{16}$/.test(normalized)) return "ups";
+
+  // FedEx: 12 or 15 digits. Kept narrow so it doesn't steal 22-digit USPS.
+  if (/^\d{12}$/.test(normalized) || /^\d{15}$/.test(normalized)) return "fedex";
+
+  return null;
 }
 
 export function getCarrierLabel(value?: string | null) {
@@ -109,6 +167,10 @@ export function buildTrackingUrl(carrier?: string | null, trackingNumber?: strin
       return `https://track.amazon.com/tracking/${encoded}`;
     case "amazon_orders":
       return `https://www.amazon.com/gp/your-account/order-details?orderID=${encoded}`;
+    case "canada_post":
+      return `https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=${encoded}`;
+    case "yunexpress":
+      return `https://www.yuntrack.com/parcelTracking?id=${encoded}`;
     default:
       return null;
   }

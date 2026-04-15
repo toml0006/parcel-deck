@@ -1,13 +1,7 @@
 import { ShipmentStatus } from "@prisma/client";
 
 import { normalizeShipmentStatus } from "../status";
-import {
-  type CarrierScraper,
-  type ScrapedEvent,
-  USER_AGENT,
-  failure,
-  stableDedupeKey,
-} from "./types";
+import { type CarrierScraper, USER_AGENT, failure } from "./types";
 
 // DHL exposes a public tracking JSON endpoint under mydhl.express.dhl
 const API = (n: string) =>

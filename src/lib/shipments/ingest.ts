@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 
 import {
   buildTrackingUrl,
+  detectCarrierFromTrackingNumber,
   getCarrierLabel,
   isAmazonOrderId,
   normalizeCarrierHint,
@@ -354,7 +355,9 @@ async function findExistingShipment(
 export async function ingestShipment(rawPayload: unknown): Promise<IngestResult> {
   const payload = parseIngestShipmentInput(rawPayload);
   const checksum = getPayloadChecksum(payload);
-  const initialCarrier = normalizeCarrierHint(payload.carrier_hint);
+  const initialCarrier =
+    normalizeCarrierHint(payload.carrier_hint) ??
+    detectCarrierFromTrackingNumber(payload.tracking_number);
   const amazon = applyAmazonOrderHeuristics(payload, initialCarrier);
   const carrier = amazon.carrier;
   const effectiveTrackingRaw =

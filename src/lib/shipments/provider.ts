@@ -32,6 +32,7 @@ type RefreshResult = {
   events?: ShipmentTrackingEvent[];
   metadata?: Prisma.InputJsonValue;
   providerTrackingId?: string | null;
+  trackingNumber?: string | null;
   trackingUrl?: string | null;
 };
 
@@ -196,7 +197,11 @@ const scraperProvider: TrackingProvider = {
     if (!shipment) return {};
     const trackingNumber =
       shipment.trackingNumberNormalized ?? shipment.trackingNumber ?? null;
-    const result = await scrapeCarrier(shipment.carrier, trackingNumber);
+    const result = await scrapeCarrier(shipment.carrier, trackingNumber, {
+      trackingUrl: shipment.trackingUrl,
+      merchant: shipment.merchant,
+      orderNumber: shipment.orderNumber,
+    });
 
     if (!result.ok) {
       return {
@@ -226,14 +231,27 @@ const scraperProvider: TrackingProvider = {
       metadata: undefined,
     }));
 
-    // Preserve awaiting_carrier status from ingest for amazon_orders.
+    // Preserve awaiting_carrier status from ingest for amazon_orders only
+    // when the scraper could not produce a real carrier status (placeholder
+    // "awaiting_carrier" from the no-op path). When the Amazon progress
+    // tracker returns a concrete status, honor it.
     const currentStatus =
-      shipment.carrier === "amazon_orders"
+      shipment.carrier === "amazon_orders" &&
+      (result.status as unknown as string) === "awaiting_carrier"
         ? shipment.currentStatus
         : result.status;
 
+    // Sweetwater/other scrapers may hand off to a native carrier by returning
+    // a different carrier than the shipment currently has. Detect and persist.
+    const resolvedCarrier =
+      result.carrier && result.carrier !== shipment.carrier
+        ? result.carrier
+        : shipment.carrier;
+    const scraperRaw = (result as unknown as { raw?: { nativeTrackingNumber?: string | null } }).raw;
+    const handoffTrackingNumber = scraperRaw?.nativeTrackingNumber ?? null;
+
     return {
-      carrier: shipment.carrier,
+      carrier: resolvedCarrier,
       currentStatus,
       deliveredAt: result.deliveredAt ?? undefined,
       estimatedDelivery: result.estimatedDelivery ?? undefined,
@@ -243,12 +261,23 @@ const scraperProvider: TrackingProvider = {
         lastScrapeAt: new Date().toISOString(),
         lastScrapeError: null,
       },
+      trackingNumber:
+        handoffTrackingNumber && resolvedCarrier !== shipment.carrier
+          ? handoffTrackingNumber
+          : undefined,
       trackingUrl:
-        shipment.trackingUrl ??
-        buildTrackingUrl(
-          shipment.carrier,
-          shipment.trackingNumberNormalized ?? shipment.trackingNumber,
-        ),
+        resolvedCarrier !== shipment.carrier
+          ? buildTrackingUrl(
+              resolvedCarrier,
+              handoffTrackingNumber ??
+                shipment.trackingNumberNormalized ??
+                shipment.trackingNumber,
+            ) ?? shipment.trackingUrl
+          : shipment.trackingUrl ??
+            buildTrackingUrl(
+              resolvedCarrier,
+              shipment.trackingNumberNormalized ?? shipment.trackingNumber,
+            ),
     };
   },
 };
@@ -284,13 +313,59 @@ async function applyTrackingUpdate(
   const latestEventAt = result.events?.[0]?.occurredAt ?? shipment.lastEventAt;
 
   await prisma.$transaction(async (tx) => {
+    let effectiveCarrier = nextCarrier;
+    let effectiveTrackingNumber = result.trackingNumber ?? shipment.trackingNumber;
+    let effectiveTrackingNumberNormalized =
+      result.trackingNumber != null
+        ? normalizeTrackingNumber(result.trackingNumber)
+        : shipment.trackingNumberNormalized ??
+          normalizeTrackingNumber(shipment.trackingNumber);
+    let effectiveTrackingUrl =
+      result.trackingUrl ??
+      shipment.trackingUrl ??
+      buildTrackingUrl(effectiveCarrier, effectiveTrackingNumberNormalized);
+
+    // Guard against colliding with another shipment on the
+    // (carrier, tracking_number) unique index when refreshing a handoff.
+    // Triggered whenever the (carrier, tracking_number) pair changes at all.
+    const carrierChanged =
+      effectiveCarrier && effectiveCarrier !== shipment.carrier;
+    const trackingChanged =
+      effectiveTrackingNumberNormalized !== shipment.trackingNumberNormalized;
+    if (
+      (carrierChanged || trackingChanged) &&
+      effectiveCarrier &&
+      effectiveTrackingNumberNormalized
+    ) {
+      const existing = await tx.shipment.findUnique({
+        where: {
+          carrier_trackingNumberNormalized: {
+            carrier: effectiveCarrier,
+            trackingNumberNormalized: effectiveTrackingNumberNormalized,
+          },
+        },
+        select: { id: true },
+      });
+      if (existing && existing.id !== shipment.id) {
+        // Another shipment already owns this (carrier, tracking_number).
+        // Revert the handoff entirely — carrier, tracking, and URL — so we
+        // leave the current row untouched from an identity standpoint.
+        effectiveCarrier = shipment.carrier;
+        effectiveTrackingNumber = shipment.trackingNumber;
+        effectiveTrackingNumberNormalized = shipment.trackingNumberNormalized;
+        effectiveTrackingUrl =
+          shipment.trackingUrl ??
+          buildTrackingUrl(effectiveCarrier, effectiveTrackingNumberNormalized);
+      }
+    }
+
     await tx.shipment.update({
       where: {
         id: shipment.id,
       },
       data: {
         active: isActiveShipmentStatus(nextStatus),
-        carrier: nextCarrier,
+        carrier: effectiveCarrier,
         currentStatus: nextStatus,
         deliveredAt: nextDeliveredAt,
         estimatedDelivery: result.estimatedDelivery ?? shipment.estimatedDelivery,
@@ -298,23 +373,16 @@ async function applyTrackingUpdate(
         lastSyncedAt: new Date(),
         metadata: mergeMetadata(shipment.metadata, result.metadata),
         providerTrackingId: result.providerTrackingId ?? shipment.providerTrackingId,
-        trackingNumberNormalized:
-          shipment.trackingNumberNormalized ??
-          normalizeTrackingNumber(shipment.trackingNumber),
-        trackingUrl:
-          result.trackingUrl ??
-          shipment.trackingUrl ??
-          buildTrackingUrl(nextCarrier, shipment.trackingNumberNormalized ?? shipment.trackingNumber),
+        trackingNumber: effectiveTrackingNumber,
+        trackingNumberNormalized: effectiveTrackingNumberNormalized,
+        trackingUrl: effectiveTrackingUrl,
       },
     });
 
     await upsertTrackingArtifact(tx, {
-      carrier: nextCarrier,
+      carrier: effectiveCarrier,
       shipmentId: shipment.id,
-      trackingUrl:
-        result.trackingUrl ??
-        shipment.trackingUrl ??
-        buildTrackingUrl(nextCarrier, shipment.trackingNumberNormalized ?? shipment.trackingNumber),
+      trackingUrl: effectiveTrackingUrl,
     });
 
     if (result.events?.length) {
