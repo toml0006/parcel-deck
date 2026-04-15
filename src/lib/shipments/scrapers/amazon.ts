@@ -1,15 +1,39 @@
 import { ShipmentStatus } from "@prisma/client";
 
+import { isAmazonOrderId } from "../carriers";
 import { normalizeShipmentStatus } from "../status";
 import {
   type CarrierScraper,
   type ScrapedEvent,
   USER_AGENT,
   failure,
+  isAllowedUrl,
   stableDedupeKey,
 } from "./types";
 
 const PAGE = (id: string) => `https://track.amazon.com/tracking/${encodeURIComponent(id)}`;
+const AMAZON_HOSTS = ["amazon.com", "track.amazon.com"];
+
+function resolveAmazonUrl(
+  trackingNumber: string | null | undefined,
+  trackingUrl: string | null | undefined,
+): string | null {
+  // A TBA number is safe. Reject Amazon order-ID shaped values — those belong
+  // on the order-details page, not track.amazon.com.
+  if (trackingNumber && !isAmazonOrderId(trackingNumber)) return PAGE(trackingNumber);
+  if (!trackingUrl) return null;
+  if (!isAllowedUrl(trackingUrl, AMAZON_HOSTS)) return null;
+  try {
+    const parsed = new URL(trackingUrl);
+    if (parsed.hostname === "track.amazon.com") return trackingUrl;
+    if (parsed.hostname.endsWith("amazon.com") && /\/progress-tracker\//.test(parsed.pathname)) {
+      return trackingUrl;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 type AmazonProgress = {
   summary?: { status?: string };
@@ -24,9 +48,11 @@ type AmazonProgress = {
   }>;
 };
 
-export const amazonScraper: CarrierScraper = async ({ trackingNumber }) => {
+export const amazonScraper: CarrierScraper = async ({ trackingNumber, trackingUrl }) => {
+  const url = resolveAmazonUrl(trackingNumber, trackingUrl);
+  if (!url) return failure("Amazon: no tracking URL available", false);
   try {
-    const res = await fetch(PAGE(trackingNumber), {
+    const res = await fetch(url, {
       headers: {
         "User-Agent": USER_AGENT,
         Accept: "text/html,application/xhtml+xml",

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowUpRight, ChevronDown, ChevronUp, Mail } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, ChevronDown, ChevronUp, Mail } from "lucide-react";
 
 import { formatCompactDate, formatRelative } from "@/lib/format";
 import { getCarrierLabel } from "@/lib/shipments/carriers";
@@ -24,6 +24,8 @@ type TableShipment = {
   createdAt: string;
   trackingUrl: string | null;
   sourceEmailUrl: string | null;
+  lastSyncedAt: string | null;
+  scrapeError: string | null;
 };
 
 type SortKey = "status" | "merchant" | "carrier" | "eta" | "lastEvent" | "age";
@@ -47,7 +49,42 @@ function toTime(value: string | null): number {
   return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
 }
 
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onToggle,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: SortDir };
+  onToggle: (key: SortKey) => void;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th className="sticky top-0 z-10 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+      <button
+        type="button"
+        onClick={() => onToggle(sortKey)}
+        className="inline-flex items-center gap-1 transition hover:text-slate-900"
+      >
+        {label}
+        {active ? (
+          sort.dir === "asc" ? (
+            <ChevronUp className="size-3" />
+          ) : (
+            <ChevronDown className="size-3" />
+          )
+        ) : (
+          <span className="size-3" />
+        )}
+      </button>
+    </th>
+  );
+}
+
 export function ShipmentTable({ shipments }: { shipments: TableShipment[] }) {
+  const router = useRouter();
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({
     key: "status",
     dir: "asc",
@@ -87,30 +124,6 @@ export function ShipmentTable({ shipments }: { shipments: TableShipment[] }) {
     );
   }
 
-  function Th({ label, sortKey }: { label: string; sortKey: SortKey }) {
-    const active = sort.key === sortKey;
-    return (
-      <th className="sticky top-0 z-10 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-        <button
-          type="button"
-          onClick={() => toggleSort(sortKey)}
-          className="inline-flex items-center gap-1 transition hover:text-slate-900"
-        >
-          {label}
-          {active ? (
-            sort.dir === "asc" ? (
-              <ChevronUp className="size-3" />
-            ) : (
-              <ChevronDown className="size-3" />
-            )
-          ) : (
-            <span className="size-3" />
-          )}
-        </button>
-      </th>
-    );
-  }
-
   if (shipments.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-sm text-slate-500">
@@ -125,61 +138,71 @@ export function ShipmentTable({ shipments }: { shipments: TableShipment[] }) {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200">
-              <Th label="Status" sortKey="status" />
-              <Th label="Merchant" sortKey="merchant" />
+              <SortHeader label="Status" sortKey="status" sort={sort} onToggle={toggleSort} />
+              <SortHeader label="Merchant" sortKey="merchant" sort={sort} onToggle={toggleSort} />
               <th className="sticky top-0 z-10 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 Item
               </th>
-              <Th label="Carrier" sortKey="carrier" />
+              <SortHeader label="Carrier" sortKey="carrier" sort={sort} onToggle={toggleSort} />
               <th className="sticky top-0 z-10 bg-white px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 Tracking
               </th>
-              <Th label="ETA" sortKey="eta" />
-              <Th label="Last event" sortKey="lastEvent" />
-              <Th label="Age" sortKey="age" />
+              <SortHeader label="ETA" sortKey="eta" sort={sort} onToggle={toggleSort} />
+              <SortHeader label="Last event" sortKey="lastEvent" sort={sort} onToggle={toggleSort} />
+              <SortHeader label="Age" sortKey="age" sort={sort} onToggle={toggleSort} />
               <th className="sticky top-0 z-10 bg-white px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {sorted.map((s) => {
               const meta = getShipmentStatusMeta(s.currentStatus as never);
+              const href = `/shipments/${s.id}`;
               return (
                 <tr
                   key={s.id}
-                  className="group border-b border-slate-100 transition hover:bg-slate-50"
+                  onClick={() => router.push(href)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") router.push(href);
+                  }}
+                  tabIndex={0}
+                  role="link"
+                  className="group cursor-pointer border-b border-slate-100 transition hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
                 >
                   <td className="px-3 py-2.5 align-top">
-                    <Link
-                      href={`/shipments/${s.id}`}
-                      className="inline-flex items-center gap-2 whitespace-nowrap"
-                    >
+                    <span className="inline-flex items-center gap-2 whitespace-nowrap">
                       <span
                         className={`size-2 rounded-full ${dotColor[s.currentStatus] ?? "bg-slate-400"}`}
                       />
                       <span className="text-xs font-medium text-slate-700">
                         {meta.label}
                       </span>
-                    </Link>
+                    </span>
                   </td>
                   <td className="px-3 py-2.5 align-top">
-                    <Link
-                      href={`/shipments/${s.id}`}
-                      className="text-sm font-medium text-slate-900 hover:text-slate-600"
-                    >
+                    <span className="text-sm font-medium text-slate-900">
                       {s.merchant ?? "—"}
-                    </Link>
+                    </span>
                   </td>
                   <td className="max-w-[280px] px-3 py-2.5 align-top">
-                    <Link
-                      href={`/shipments/${s.id}`}
-                      className="block truncate text-sm text-slate-700 hover:text-slate-950"
+                    <span
+                      className="block truncate text-sm text-slate-700"
                       title={s.itemSummary ?? ""}
                     >
                       {s.itemSummary ?? "—"}
-                    </Link>
+                    </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 align-top text-xs text-slate-600">
-                    {getCarrierLabel(s.carrier)}
+                    <span className="inline-flex items-center gap-1.5">
+                      {getCarrierLabel(s.carrier)}
+                      {s.scrapeError ? (
+                        <span
+                          className="inline-flex items-center text-amber-600"
+                          title={`Tracking refresh failing: ${s.scrapeError}${s.lastSyncedAt ? ` (last tried ${formatRelative(s.lastSyncedAt)})` : ""}`}
+                        >
+                          <AlertTriangle className="size-3.5" />
+                        </span>
+                      ) : null}
+                    </span>
                   </td>
                   <td className="px-3 py-2.5 align-top">
                     {s.trackingNumber ? (
@@ -205,7 +228,10 @@ export function ShipmentTable({ shipments }: { shipments: TableShipment[] }) {
                     {formatRelative(s.createdAt)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 align-top">
-                    <div className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                    <div
+                      className="flex items-center gap-1 opacity-0 transition group-hover:opacity-100 group-focus:opacity-100"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {s.trackingUrl ? (
                         <a
                           href={s.trackingUrl}

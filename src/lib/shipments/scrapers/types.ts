@@ -29,6 +29,9 @@ export type ScrapeResult = ScrapeSuccess | ScrapeFailure;
 export type ScrapeInput = {
   carrier: string;
   trackingNumber: string;
+  trackingUrl?: string | null;
+  merchant?: string | null;
+  orderNumber?: string | null;
 };
 
 export type CarrierScraper = (input: ScrapeInput) => Promise<ScrapeResult>;
@@ -42,4 +45,23 @@ export function failure(error: string, transient = true): ScrapeFailure {
 
 export function stableDedupeKey(parts: Array<string | number | null | undefined>) {
   return parts.filter((v) => v !== null && v !== undefined).join("|");
+}
+
+/**
+ * Strict host-allowlist check for scraper URLs sourced from the DB.
+ * Ingest validates `tracking_url` as a syntactic URL only; here we refuse to
+ * fetch anything outside the expected carrier/merchant hostnames.
+ */
+export function isAllowedUrl(raw: string | null | undefined, allowedHosts: string[]): boolean {
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    const host = parsed.hostname.toLowerCase();
+    return allowedHosts.some(
+      (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+    );
+  } catch {
+    return false;
+  }
 }

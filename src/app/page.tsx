@@ -39,6 +39,9 @@ export default async function Home({ searchParams }: HomePageProps) {
       const trackingArtifact = s.artifacts.find((a) => a.key === "tracking");
       const emailArtifact = s.artifacts.find((a) => a.key === "source-email");
       const latest = s.events[0];
+      const md = (s.metadata ?? {}) as Record<string, unknown>;
+      const scrapeError =
+        typeof md.lastScrapeError === "string" ? md.lastScrapeError : null;
       return {
         id: s.id,
         currentStatus: s.currentStatus,
@@ -52,6 +55,8 @@ export default async function Home({ searchParams }: HomePageProps) {
         createdAt: s.createdAt.toISOString(),
         trackingUrl: trackingArtifact?.url ?? s.trackingUrl ?? null,
         sourceEmailUrl: emailArtifact?.url ?? null,
+        lastSyncedAt: s.lastSyncedAt?.toISOString() ?? null,
+        scrapeError,
       };
     });
 
