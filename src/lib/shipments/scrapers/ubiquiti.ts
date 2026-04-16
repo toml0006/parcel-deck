@@ -29,13 +29,40 @@ export const ubiquitiScraper: CarrierScraper = async ({ trackingUrl, orderNumber
     if (!res.ok) return failure(`Ubiquiti HTTP ${res.status}`, res.status >= 500);
     const html = await res.text();
 
-    // Narrow, order-specific keys only — do not fall back to a generic
-    // `"status"` match, which easily picks up unrelated JSON on the page.
-    const statusRaw =
-      html.match(/"orderStatus"\s*:\s*"([^"]+)"/)?.[1] ??
-      html.match(/"fulfillmentStatus"\s*:\s*"([^"]+)"/)?.[1] ??
-      html.match(/"shipmentStatus"\s*:\s*"([^"]+)"/)?.[1] ??
-      "";
+    // The store page is a Next.js SPA — status lives in __NEXT_DATA__, not
+    // in inline script variables. Parse it first and fall back to regex.
+    let statusRaw = "";
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([^<]+)<\/script>/);
+    if (nextDataMatch) {
+      try {
+        const nextData = JSON.parse(nextDataMatch[1]) as {
+          props?: {
+            pageProps?: {
+              order?: {
+                displayStatus?: { fulfillment?: string };
+                fulfillments?: { fulfillmentLines?: Array<{ status?: string }> };
+              };
+            };
+          };
+        };
+        const order = nextData.props?.pageProps?.order;
+        statusRaw =
+          order?.displayStatus?.fulfillment ??
+          order?.fulfillments?.fulfillmentLines?.[0]?.status ??
+          "";
+      } catch {
+        // fall through to regex
+      }
+    }
+
+    // Fallback: narrow, order-specific keys only
+    if (!statusRaw) {
+      statusRaw =
+        html.match(/"orderStatus"\s*:\s*"([^"]+)"/)?.[1] ??
+        html.match(/"fulfillmentStatus"\s*:\s*"([^"]+)"/)?.[1] ??
+        html.match(/"shipmentStatus"\s*:\s*"([^"]+)"/)?.[1] ??
+        "";
+    }
 
     if (!statusRaw) {
       return failure("Ubiquiti: order status not found", true);
